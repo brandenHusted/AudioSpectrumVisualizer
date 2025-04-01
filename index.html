@@ -18,24 +18,18 @@
             text-align: center;
         }
 
-        /* Header styling */
         .container {
             max-width: 600px;
             padding: 20px;
         }
 
-        h1 {
-            font-size: 28px;
-            margin-bottom: 10px;
+        canvas {
+            display: none;
+            border: 1px solid white;
+            margin-left: -70px;
+            background: black;
         }
 
-        h2 {
-            font-size: 22px;
-            margin-bottom: 20px;
-            color: #f39c12;
-        }
-
-        /* Button styling */
         .upload-btn {
             font-size: 18px;
             padding: 12px 24px;
@@ -50,6 +44,15 @@
         .upload-btn:hover {
             background-color: #e67e22;
         }
+
+        #audio-controls {
+            margin-top: 20px;
+        }
+
+        #current-time {
+            font-size: 18px;
+            margin-top: 10px;
+        }
     </style>
 </head>
 <body>
@@ -57,29 +60,142 @@
     <div class="container">
         <h1>Welcome to Branden and Caden's Final Project for CS326-A!</h1>
         <h2>Audio Spectrum Visualizer</h2>
+        <form>
+            <label for="file-upload">Upload MP3:</label>
+            <input type="file" id="file-upload" name="file-upload" title="Select an MP3 file" placeholder="Choose your file">
+        </form>
 
-        <button class="upload-btn" onclick="document.getElementById('mp3Input').click()">Click to add an MP3 file</button>
-        <input type="file" id="mp3Input" accept=".mp3" style="display: none;" onchange="handleFile(event)">
+        <canvas id="audioCanvas" width="800" height="300"></canvas>
+
+        <div id="audio-controls" style="display: none;">
+            <button id="playPauseBtn" class="upload-btn">Play</button>
+            <div id="current-time">00:00</div>
+        </div>
     </div>
 
     <script>
-        function handleFile(event) {
-            const file = event.target.files[0];
+    let ws;
+    const canvas = document.getElementById('audioCanvas');
+    const ctx = canvas.getContext("2d");
+    let freqData = new Uint8Array(50); // Holds the frequency data
+    const fileInput = document.getElementById('file-upload');
+    const playPauseBtn = document.getElementById('playPauseBtn');
+    const currentTimeElem = document.getElementById('current-time');
+    let audio = new Audio();
+    let audioContext;
+    let analyser;
+    let isPlaying = false;
 
-            if (file) {
-                const fileType = file.type;
-                const fileName = file.name;
-
-                // Check if the file is an MP3 so only mp3 files are allowed
-                if (fileType !== "audio/mpeg" && !fileName.endsWith(".mp3")) {
-                    alert("Please choose a different file. Only MP3 files are allowed.");
-                    event.target.value = ""; // Reset file input
-                    return;
-                }
-
-                alert("File selected: " + fileName);
-            }
+    fileInput.addEventListener('change', function() {
+        if (fileInput.files.length > 0) {
+            const file = fileInput.files[0];
+            canvas.style.display = 'block'; // Show the canvas
+            handleFile(file);
         }
+    });
+
+    function handleFile(file) {
+        if (file) {
+            if (file.type !== "audio/mpeg") {
+                alert("Please upload an MP3 file.");
+                canvas.style.display = 'none'; // Show the canvas
+                return;
+            }
+
+            // Read MP3 file and send it via WebSocket
+            const reader = new FileReader();
+            reader.onload = function () {
+                const base64Mp3 = reader.result.split(",")[1];
+                // create WebSocket for your website
+                ws = new WebSocket("ws://153.106.217.183:8765");
+                ws.onopen = () => {
+                    console.log("WebSocket Connected");
+                    ws.send(JSON.stringify({ type: "upload", mp3_data: base64Mp3 }));
+                };
+
+                ws.onmessage = (event) => {
+                    freqData = JSON.parse(event.data);
+                    draw();  // Start drawing once the frequency data is received
+                };
+
+                ws.onerror = (error) => console.error("WebSocket Error:", error);
+                ws.onclose = () => console.log("WebSocket Disconnected");
+
+                // Set the source for the audio element
+                audio.src = reader.result;
+                audio.load();
+                audio.onloadedmetadata = () => {
+                    document.getElementById('audio-controls').style.display = 'block'; // Show controls
+                    updateCurrentTime();
+                    setupAudioContext();
+                };
+            };
+
+            reader.readAsDataURL(file);
+        }
+    }
+
+    // Set up the Web Audio API
+    function setupAudioContext() {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 2048; // The size of the FFT used for frequency analysis
+        const source = audioContext.createMediaElementSource(audio);
+        source.connect(analyser);
+        analyser.connect(audioContext.destination);
+
+        analyser.getByteFrequencyData(freqData);
+    }
+
+    // Play or pause the audio when the button is clicked
+    playPauseBtn.addEventListener('click', function() {
+        if (isPlaying) {
+            audio.pause();
+            playPauseBtn.textContent = 'Play';
+        } else {
+            audio.play();
+            playPauseBtn.textContent = 'Pause';
+        }
+        isPlaying = !isPlaying;
+    });
+
+    // Update the current time display and draw the spectrum
+    function updateCurrentTime() {
+        setInterval(() => {
+            const currentTime = audio.currentTime;
+            const duration = audio.duration;
+            const remainingTime = duration - currentTime;
+
+            const minutes = Math.floor(remainingTime / 60);
+            const seconds = Math.floor(remainingTime % 60);
+            currentTimeElem.textContent = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+
+            draw(); // Update the canvas with the current frequency data
+        }, 100);
+    }
+
+    // Draw the frequency spectrum as moving bars
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Get the frequency data from the analyser
+        analyser.getByteFrequencyData(freqData);
+
+        // Set up the width of each bar
+        const barWidth = canvas.width / freqData.length;
+        const barSpacing = 1;  // Space between bars
+        const maxHeight = canvas.height;
+
+        // Draw the frequency bars
+        freqData.forEach((value, i) => {
+            const barHeight = (value / 255) * maxHeight;
+            ctx.fillStyle = `hsl(${(i * 10) % 360}, 100%, 50%)`;  // Color cycling by bar index (really cool!!)
+            ctx.fillRect(i * (barWidth + barSpacing), canvas.height - barHeight, barWidth, barHeight);
+        });
+
+        // Request animation frame for continuous drawing
+        requestAnimationFrame(draw);
+    }
     </script>
 
 </body>
