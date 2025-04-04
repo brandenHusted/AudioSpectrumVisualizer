@@ -200,7 +200,7 @@ function seekAudio(e) {
   const newTime = (offsetX / width) * duration;
   audio.currentTime = newTime;
 
-  // Optional: visually update immediately
+  // visually update immediately
   const progressPercent = (newTime / duration) * 100;
   progressBar.style.width = `${progressPercent}%`;
 }
