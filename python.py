@@ -1,67 +1,57 @@
+import pyaudio
 import numpy as np
+import paho.mqtt.client as mqtt
 import json
-import asyncio
-import websockets
-import wave
-from pydub import AudioSegment
-import tempfile
-import base64
+import time
 
-# WebSocket clients storage
-clients = set()
+# MQTT broker details
+# This uses TLS (secure MQTT) with port 8883 and HiveMQ’s default TLS setup may want to use private Mosquitto broker later 
+MQTT_BROKER = "broker.hivemq.com"
+MQTT_PORT = 8883  # Secure port for TLS
+MQTT_TOPIC = "branden/audiofft"
 
-async def audio_stream(websocket, path):
-    clients.add(websocket)
-    try:
-        async for message in websocket:
-            data = json.loads(message)
-            if data["type"] == "upload":
-                mp3_data = data["mp3_data"]
-                await process_mp3_and_send_fft(mp3_data, websocket)
-    finally:
-        clients.remove(websocket)
+# PyAudio settings
+CHUNK = 1024           # Number of audio samples per frame
+FORMAT = pyaudio.paInt16
+CHANNELS = 1
+RATE = 44100           # Sampling rate in Hz
 
-async def process_mp3_and_send_fft(mp3_data, websocket):
-    # Convert base64 MP3 data to a WAV file
-    decoded_mp3 = base64.b64decode(mp3_data)
+# Setup MQTT client with TLS
+client = mqtt.Client()
+client.tls_set()  # Use default system CA certs
+client.connect(MQTT_BROKER, MQTT_PORT, keepalive=60)
+client.loop_start()
 
-    with tempfile.NamedTemporaryFile(delete=True, suffix=".mp3") as tmp_mp3:
-        tmp_mp3.write(decoded_mp3)
-        tmp_mp3.flush()
-        audio = AudioSegment.from_mp3(tmp_mp3.name)
+# Setup PyAudio stream
+p = pyaudio.PyAudio()
+stream = p.open(format=FORMAT,
+                channels=CHANNELS,
+                rate=RATE,
+                input=True,
+                frames_per_buffer=CHUNK)
 
-    # Convert to WAV format
-    with tempfile.NamedTemporaryFile(delete=True, suffix=".wav") as tmp_wav:
-        audio.export(tmp_wav.name, format="wav")
-        
-        # Read WAV file
-        wf = wave.open(tmp_wav.name, "rb")
-        RATE = wf.getframerate()
-        CHUNK = 1024  # Frames per buffer
-        
-        while True:
-            data = wf.readframes(CHUNK)
-            if not data:
-                break
+print("Streaming audio and publishing FFT data to MQTT...")
 
-            # Convert audio to numpy array
-            audio_samples = np.frombuffer(data, dtype=np.int16)
+try:
+    while True:
+        data = stream.read(CHUNK, exception_on_overflow=False)
+        audio_data = np.frombuffer(data, dtype=np.int16)
 
-            # Compute FFT
-            fft_data = np.abs(np.fft.rfft(audio_samples))
-            fft_json = json.dumps(fft_data.tolist())
+        # Compute FFT and convert to magnitude
+        fft_data = np.abs(np.fft.fft(audio_data))[:CHUNK // 2]
+        fft_data = np.round(fft_data / 100).astype(int)  # Scale and round for display
 
-            # Send FFT data
-            if websocket.open:
-                await websocket.send(fft_json)
-            await asyncio.sleep(0.05)  # Small delay to simulate streaming
+        # Serialize to JSON and publish
+        payload = json.dumps(fft_data.tolist())
+        client.publish(MQTT_TOPIC, payload)
+        time.sleep(0.05) 
+except KeyboardInterrupt:
+    print("Stopping...")
+finally:
+    stream.stop_stream()
+    stream.close()
+    p.terminate()
+    client.loop_stop()
+    client.disconnect()
 
-# Start WebSocket Server
-async def main():
-    start_server = await websockets.serve(audio_stream, "0.0.0.0", 8765)
-    print("WebSocket server started at ws://0.0.0.0:8765")
-    await start_server.wait_closed()
 
-# Run the event loop
-if __name__ == "__main__":
-    asyncio.run(main())
