@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Audio Player with Seek Bar</title>
+  <title>Audio Player with Visualizer</title>
+  <!-- connect to python.py which is a MQTT broker Found here: https://www.emqx.com/en/blog/mqtt-js-tutorial -->
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -66,6 +68,12 @@
       border-radius: 6px;
       transition: width 0.1s linear;
     }
+
+    canvas {
+      margin-top: 40px;
+      background: #222;
+      border-radius: 12px;
+    }
   </style>
 </head>
 <body>
@@ -74,7 +82,7 @@
     <h2>Audio Player</h2>
     <form>
       <label for="file-upload">Upload MP3:</label>
-      <input type="file" id="file-upload" name="file-upload" title="Select an MP3 file" placeholder="Choose your file">
+      <input type="file" id="file-upload" name="file-upload" title="Select an MP3 file">
     </form>
 
     <div id="audio-controls" style="display: none;">
@@ -131,81 +139,62 @@
       isPlaying = !isPlaying;
     });
 
-    // Updates the current time and progress bar
     function updateTimeAndProgress() {
       setInterval(() => {
         const currentTime = audio.currentTime;
         const duration = audio.duration;
 
-        // Update current time display
         const minutes = Math.floor(currentTime / 60);
         const seconds = Math.floor(currentTime % 60);
         currentTimeElem.textContent = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
 
-        // Update progress bar width
         const progressPercent = (currentTime / duration) * 100;
         progressBar.style.width = `${progressPercent}%`;
       }, 200);
     }
 
-    // If you click on progress bar you can change when the music is playing
-    progressContainer.addEventListener('click', (e) => {
-      const width = progressContainer.clientWidth;
-      const clickX = e.offsetX;
-      const duration = audio.duration;
-      audio.currentTime = (clickX / width) * duration;
+    let isDragging = false;
+
+    progressContainer.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      seekAudio(e);
     });
 
-    // Allow clicking and dragging on the progress bar
-    // stackoverflow https://stackoverflow.com/questions/12314345/custom-progress-bar-for-audio-and-progress-html5-elements
-let isDragging = false;
+    document.addEventListener('mouseup', () => {
+      isDragging = false;
+    });
 
-progressContainer.addEventListener('mousedown', (e) => {
-  isDragging = true;
-  seekAudio(e);
-});
-
-document.addEventListener('mouseup', () => {
-  isDragging = false;
-});
-
-document.addEventListener('mousemove', (e) => {
-  if (isDragging) {
-    const rect = progressContainer.getBoundingClientRect();
-    const offsetX = e.clientX - rect.left;
-
-    // if cursor is out of bounds change pause button to play
-    if (offsetX < 0 || offsetX > rect.width) {
-        isDragging = false;
-        if (!audio.paused) {
+    document.addEventListener('mousemove', (e) => {
+      if (isDragging) {
+        const rect = progressContainer.getBoundingClientRect();
+        const offsetX = e.clientX - rect.left;
+        if (offsetX < 0 || offsetX > rect.width) {
+          isDragging = false;
+          if (!audio.paused) {
             audio.pause();
             isPlaying = false;
             playPauseBtn.textContent = 'Play';
+          }
+          return;
         }
-        return;
+        seekAudio(e);
+      }
+    });
+
+    function seekAudio(e) {
+      const rect = progressContainer.getBoundingClientRect();
+      const offsetX = e.clientX - rect.left;
+      const width = rect.width;
+      const duration = audio.duration;
+      if (offsetX < 0 || offsetX > rect.width) return;
+      const newTime = (offsetX / width) * duration;
+      audio.currentTime = newTime;
+      const progressPercent = (newTime / duration) * 100;
+      progressBar.style.width = `${progressPercent}%`;
     }
-    seekAudio(e);
-  }
-});
-
-function seekAudio(e) {
-  const rect = progressContainer.getBoundingClientRect();
-  const offsetX = e.clientX - rect.left;
-  const width = rect.width;
-  const duration = audio.duration;
-
-  // Ensure offsetX is within bounds
-  if (offsetX < 0 || offsetX > rect.width) return;
-
-  const newTime = (offsetX / width) * duration;
-  audio.currentTime = newTime;
-
-  // visually update immediately
-  const progressPercent = (newTime / duration) * 100;
-  progressBar.style.width = `${progressPercent}%`;
-}
 
     
   </script>
 </body>
 </html>
+
