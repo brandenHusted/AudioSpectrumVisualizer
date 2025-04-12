@@ -5,118 +5,125 @@
 
 import time
 import numpy as np
-from pydub import AudioSegment # ?
-import simpleaudio as sa #
+import simpleaudio as sa
+import array
+import busio
+import paho.mqtt.client as mqtt
 from adafruit_pca9685 import PCA9685
 from board import SCL, SDA
-import busio
+from pydub import AudioSegment
+from pydub.utils import get_array_type
 
-## Lab 7 ##
-import paho.mqtt.client as mqtt
+# Local import
+import SECURITY
 
 ### Constants ###
 
-# MQTT
-TOPIC = 'jcalvin/button'
+# MQTT (not used here yet but placeholder)
 PORT = 1883
 QOS = 0
 KEEPALIVE = 60
-BROKER = ''
-BROKER_AUTHENTICATION = True # True for authenticaion, set to False for anonymous brokers
-# Note: these constants must be set if broker requires authentication
-USERNAME = ''
-PASSWORD = ''
+BROKER_AUTHENTICATION = True
 
-## GPT ##
+BROKER = SECURITY.broker
+TOPIC_B = SECURITY.topicB
+TOPIC_M = SECURITY.topicM
+TOPIC_T = SECURITY.topicT
+USERNAME = SECURITY.username
+PASSWORD = SECURITY.password
+
 # Initialize I2C and PCA9685
 i2c = busio.I2C(SCL, SDA)
 pca = PCA9685(i2c)
-pca.frequency = 1000  # Set PWM frequency to 1kHz; controls the LED brightness
+pca.frequency = 1000  # Set PWM frequency to 1kHz
 
-# Audio file setup; GET RID OF SOME
-AUDIO_FILE = "suckthis.ogg"  # Replace with your music file
-NUM_LEDS_PER_GROUP = 5  # LEDs per frequency band
-FFT_SIZE = 2048  # Number of samples per FFT calculation
-SAMPLE_RATE = 44100  # Standard CD-quality sample rate
+# Audio file setup
+AUDIO_FILE = "WAV/WhyTry.wav"  # You can change this to .wav or .ogg
+NUM_LEDS_PER_GROUP = 5
+FFT_SIZE = 2048
+SAMPLE_RATE = 44100
 
-# Load the file and convert to raw data; GET RID OF?
-audio = AudioSegment.from_file(AUDIO_FILE, format="ogg").set_frame_rate(SAMPLE_RATE).set_channels(1)
-samples = np.array(audio.get_array_of_samples(), dtype=np.float32)
-samples /= np.max(np.abs(samples))  # Normalize audio data
+# === Load and Prepare Audio ===
+audio = AudioSegment.from_file(AUDIO_FILE).set_channels(1).set_frame_rate(SAMPLE_RATE)
+array_type = get_array_type(audio.sample_width * 8)
+audio_array = array.array(array_type, audio._data)
 
-# Play the audio file; GET RID OF
-play_obj = sa.play_buffer(samples, 1, audio.sample_width, SAMPLE_RATE)
+# Play the audio file
+play_obj = sa.play_buffer(
+    audio_array.tobytes(),
+    num_channels=1,
+    bytes_per_sample=audio.sample_width,
+    sample_rate=SAMPLE_RATE
+)
 
-# Frequency band mapping (approximate); GET RID OF?
+# Convert to normalized float samples for analysis
+samples = np.array(audio_array).astype(np.float32)
+samples /= np.iinfo(audio_array.typecode).max
+
+# Frequency band mapping
 BASS_CUTOFF = 200  # Hz
 MID_CUTOFF = 2000  # Hz
-NUM_FREQS = FFT_SIZE // 2  # Number of FFT bins
+NUM_FREQS = FFT_SIZE // 2
 
-# Normalize function to convert frequency band values to LED brightness
+# === LED Update Functions ===
 def normalize(data):
     return (data / (np.max(data) if np.max(data) > 0 else 1)) * 0xFFF
 
-# Function to map frequency band to LEDs
 def update_leds_for_band(led_group, brightness):
-    max_brightness = 0xFFF  # Maximum PWM value (4095)
-    
-    # Increase sensitivity
-    total_energy = np.sum(brightness) / (NUM_LEDS_PER_GROUP * (max_brightness * 0.7))  # More aggressive scaling
-    
-    num_active_leds = int(total_energy * NUM_LEDS_PER_GROUP)
-    num_active_leds = min(num_active_leds, NUM_LEDS_PER_GROUP)  # Ensure we don't exceed LED count
+    max_brightness = 0xFFF
+    total_energy = np.sum(brightness) / (NUM_LEDS_PER_GROUP * (max_brightness * 0.7))
+    num_active_leds = min(int(total_energy * NUM_LEDS_PER_GROUP), NUM_LEDS_PER_GROUP)
 
     for i in range(NUM_LEDS_PER_GROUP):
         if i < num_active_leds:
-            # Make brightness "jump" instead of being smooth
             if total_energy > 0.8:
-                brightness_value = max_brightness  # Fully bright
-            elif total_energy > 0.5:
-                brightness_value = int(max_brightness * 0.5)  # Medium brightness
+                brightness_value = max_brightness  # Full brightness
+            elif total_energy > 0.6:
+                brightness_value = int(max_brightness * 0.75)  # Bright
+            elif total_energy > 0.4:
+                brightness_value = int(max_brightness * 0.5)  # Medium
             else:
-                brightness_value = int(max_brightness * 0.2)  # Dim brightness
+                brightness_value = int(max_brightness * 0.2)  # Dim
         else:
-            brightness_value = 0  # LED off
-        
-        # Immediately set LED brightness (no smoothing)
-        pca.channels[led_group + i].duty_cycle = brightness_value # can i tie this directly into the above if statement?
+            brightness_value = 0
+        pca.channels[led_group + i].duty_cycle = brightness_value
 
-    time.sleep(0.0005)  # Faster updates for a more reactive effect
-
+# === Main Loop ===
 def main():
-    # Main loop to process audio and update LEDs
     try:
-        for i in range(0, len(samples), FFT_SIZE):
-            chunk = samples[i:i + FFT_SIZE]  # Get a chunk of audio data; GET RID OF
+        i = 0
+        while play_obj.is_playing() and i < len(samples):
+            chunk = samples[i:i + FFT_SIZE]
+            if len(chunk) < FFT_SIZE:
+                break
 
-            # Apply FFT and get magnitudes; GET RID OF
-            fft_result = np.abs(np.fft.rfft(chunk))  # Compute FFT
-            freq_bins = np.fft.rfftfreq(FFT_SIZE, d=1.0 / SAMPLE_RATE)  # Get frequency values
+            fft_result = np.abs(np.fft.rfft(chunk))
+            freq_bins = np.fft.rfftfreq(FFT_SIZE, d=1.0 / SAMPLE_RATE)
 
-            # Split frequencies into bands; GET RID OF
-            bass = fft_result[freq_bins <= BASS_CUTOFF]  # Bass frequencies
-            mid = fft_result[(freq_bins > BASS_CUTOFF) & (freq_bins <= MID_CUTOFF)]  # Mid frequencies
-            treble = fft_result[freq_bins > MID_CUTOFF]  # Treble frequencies
+            bass = fft_result[freq_bins <= BASS_CUTOFF]
+            mid = fft_result[(freq_bins > BASS_CUTOFF) & (freq_bins <= MID_CUTOFF)]
+            treble = fft_result[freq_bins > MID_CUTOFF]
 
-            # Normalize the frequency bands to LED brightness
-            bass_brightness = normalize(bass[:NUM_LEDS_PER_GROUP])  # Map bass to LED brightness
-            mid_brightness = normalize(mid[:NUM_LEDS_PER_GROUP])  # Map mid to LED brightness
-            treble_brightness = normalize(treble[:NUM_LEDS_PER_GROUP])  # Map treble to LED brightness
+            bass_brightness = normalize(bass[:NUM_LEDS_PER_GROUP])
+            mid_brightness = normalize(mid[:NUM_LEDS_PER_GROUP])
+            treble_brightness = normalize(treble[:NUM_LEDS_PER_GROUP])
 
-            # Update LEDs based on the frequency bands
-            update_leds_for_band(0, bass_brightness)  # Update bass LEDs (group 1)
-            update_leds_for_band(NUM_LEDS_PER_GROUP, mid_brightness)  # Update mid LEDs (group 2)
-            update_leds_for_band(2 * NUM_LEDS_PER_GROUP, treble_brightness)  # Update treble LEDs (group 3)
+            update_leds_for_band(0, bass_brightness)
+            update_leds_for_band(NUM_LEDS_PER_GROUP, mid_brightness)
+            update_leds_for_band(2 * NUM_LEDS_PER_GROUP, treble_brightness)
 
-            # Sync with playback
-            time.sleep(FFT_SIZE / SAMPLE_RATE)  # Sync with audio playback
+            time.sleep(FFT_SIZE / SAMPLE_RATE)
+            i += FFT_SIZE
 
     except KeyboardInterrupt:
-        # Handle Ctrl+C gracefully and turn off all LEDs when interrupted
-        print("Exiting... Turning off all LEDs.")
+        print("Interrupted. Stopping audio and turning off LEDs.")
+        play_obj.stop()
+
+    finally:
+        print("Shutting down. Turning off all LEDs.")
         for channel in range(NUM_LEDS_PER_GROUP * 3):
             pca.channels[channel].duty_cycle = 0
-        play_obj.stop()
+
 
 if __name__ == "__main__":
     main()
