@@ -1,6 +1,5 @@
-##### LED_Driver #####
-# This python program connects to an MQTT publisher and gatheres the published music frequencies
-# The program then uses these frequencies to drive LEDs connected on a raspberry pi to create an audio visualizer
+##### LED_ALONE #####
+# A standalone version of LED_MQTT used to test the LEDs alone.
 # Code is comprised of work from Prof. Derek Schurrman, and Caden Ziskie with the aid of ChatGPT
 
 import time
@@ -124,41 +123,5 @@ def main():
         for channel in range(NUM_LEDS_PER_GROUP * 3):
             pca.channels[channel].duty_cycle = 0
 
-
 if __name__ == "__main__":
     main()
-
-# ## Lab 7 ##
-# # Callback when a connection has been established with the MQTT broker
-# def on_connect(client, userdata, flags, reason_code, properties):
-#     if reason_code == 0:
-#         print(f'Connected to {BROKER} successful.')
-#     else:
-#         print(f'Connection to {BROKER} failed. Return code={rc}')
-
-# # Callback when client receives a message from the broker
-# # Use button message to turn LED on/off
-# def on_message(client, data, msg):
-#     print(f'MQTT message received -> topic:{msg.topic}, message:{msg.payload}')
-#     if msg.topic == TOPIC:
-#         return
-#        # call main/led update
-
-# # Setup MQTT client and callbacks 
-# client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-
-# if BROKER_AUTHENTICATION:
-#     client.username_pw_set(USERNAME, password=PASSWORD)
-
-# client.on_connect = on_connect
-# client.on_message = on_message
-
-# # Connect to MQTT broker and subscribe to the button topic
-# client.connect(BROKER, PORT, KEEPALIVE)
-# client.subscribe(TOPIC, qos=QOS)
-
-# try:
-#     client.loop_forever()
-# except KeyboardInterrupt:
-#     client.disconnect()
-#     print('Done')
