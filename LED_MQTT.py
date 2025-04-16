@@ -2,6 +2,7 @@
 # This python program connects to an MQTT publisher and gatheres the published music frequencies
 # The program then uses these frequencies to drive LEDs connected on a raspberry pi to create an audio visualizer
 # Code is comprised of work from Prof. Derek Schurrman, and Caden Ziskie with the aid of ChatGPT and ClaudeAI
+
 import time
 import numpy as np
 import json
