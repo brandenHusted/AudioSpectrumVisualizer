@@ -50,8 +50,6 @@ def on_message(client, userdata, msg):
     
     # Print the updated values (you can replace this with LED control code)
     print(f"Bass: {latest_values['bass']}, Mid: {latest_values['mid']}, Treble: {latest_values['treble']}")
-    
-    # TODO: Add your LED control code here based on the frequency values
 
 def main():
     # Create MQTT client instance
