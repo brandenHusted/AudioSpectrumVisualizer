@@ -103,19 +103,20 @@ const progressContainer = document.getElementById('progress-container');
 let audio = new Audio();
 let isPlaying = false;
 
+// Listen for file selection
 fileInput.addEventListener('change', function () {
 if (fileInput.files.length > 0) {
 const file = fileInput.files[0];
 handleFile(file);
 }
 });
-
+// Validate file is MP3 format
 function handleFile(file) {
 if (file.type !== "audio/mpeg") {
 alert("Please upload an MP3 file.");
 return;
 }
-
+ // Read file as data URL
 const reader = new FileReader();
 reader.onload = function () {
 audio.src = reader.result;
@@ -132,6 +133,7 @@ playPauseBtn.addEventListener('click', function () {
 if (typeof audioContext === 'undefined') {
 setupAudioProcessing(); // Init audio graph
 }
+// Toggle play/pause state
 if (isPlaying) {
 audio.pause();
 playPauseBtn.textContent = 'Play';
@@ -151,13 +153,14 @@ const minutes = Math.floor(currentTime / 60);
 const seconds = Math.floor(currentTime % 60);
 currentTimeElem.textContent = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
 
+// Update progress bar width based on current position
 const progressPercent = (currentTime / duration) * 100;
 progressBar.style.width = `${progressPercent}%`;
 }, 200);
 }
 
 let isDragging = false;
-
+// Handle mouse interactions with the progress bar
 progressContainer.addEventListener('mousedown', (e) => {
 isDragging = true;
 seekAudio(e);
@@ -195,7 +198,7 @@ audio.currentTime = newTime;
 const progressPercent = (newTime / duration) * 100;
 progressBar.style.width = `${progressPercent}%`;
 }
-
+// Initialize MQTT client with secure WebSocket connection
 const mqttClient = mqtt.connect("wss://iot.cs.calvin.edu:8083", {
 username: "cs326",
 password: "piot",
@@ -204,7 +207,7 @@ password: "piot",
 mqttClient.on("connect", () => {
 console.log("Connected to MQTT broker");
 });
-
+// Variables for audio processing
 let audioContext, sourceNode, analyser, dataArray;
 
 function setupAudioProcessing() {
@@ -243,5 +246,4 @@ requestAnimationFrame(processAudio);
 </script>
 </body>
 </html>
-
 
