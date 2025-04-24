@@ -1,80 +1,248 @@
-import paho.mqtt.client as mqtt
-import time
-import numpy as np
-import json
-
-# MQTT settings
-MQTT_BROKER = "iot.cs.calvin.edu"
-MQTT_PORT = 8883  # TLS port
-MQTT_USERNAME = "cs326"
-MQTT_PASSWORD = "piot"
-
-# Topics to subscribe to
-BASS_TOPIC = "blh94/bass"
-MID_TOPIC = "blh94/mid"
-TREBLE_TOPIC = "blh94/treble"
-
-# Store the latest values
-latest_values = {
-    "bass": 0,
-    "mid": 0,
-    "treble": 0
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Audio Player with Visualizer</title>
+<!-- connect to python.py which is a MQTT broker Found here: https://www.emqx.com/en/blog/mqtt-js-tutorial -->
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<style>
+body {
+font-family: Arial, sans-serif;
+background-color: #121212;
+color: white;
+display: flex;
+flex-direction: column;
+align-items: center;
+justify-content: center;
+height: 100vh;
+margin: 0;
+text-align: center;
 }
 
-# Define callback functions for MQTT client
-def on_connect(client, userdata, flags, rc):
-    print(f"Connected with result code {rc}")
-    # Subscribe to topics once connected
-    client.subscribe(BASS_TOPIC)
-    client.subscribe(MID_TOPIC)
-    client.subscribe(TREBLE_TOPIC)
+.container {
+max-width: 600px;
+padding: 20px;
+}
 
-def on_message(client, userdata, msg):
-    topic = msg.topic
-    payload = msg.payload.decode()
-    # Parse the comma-separated values and use the first value (or average, or sum, etc.)
-    values = [int(val) for val in payload.split(',') if val]
+.upload-btn {
+font-size: 18px;
+padding: 12px 24px;
+background-color: #f39c12;
+color: white;
+border: none;
+border-radius: 8px;
+cursor: pointer;
+transition: background-color 0.3s ease-in-out;
+}
 
-    if not values:  # Handle empty lists
-        value = 0
-    else:
-        # You can choose how to handle multiple values:
-        value = values[0]
-    
-    if topic == BASS_TOPIC:
-        latest_values["bass"] = value
-    elif topic == MID_TOPIC:
-        latest_values["mid"] = value
-    elif topic == TREBLE_TOPIC:
-        latest_values["treble"] = value
-    
-    # Print the updated values (you can replace this with LED control code)
-    print(f"Bass: {latest_values['bass']}, Mid: {latest_values['mid']}, Treble: {latest_values['treble']}")
+.upload-btn:hover {
+background-color: #e67e22;
+}
 
-def main():
-    # Create MQTT client instance
-    client = mqtt.Client()
-    client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
-    
-    # Set up TLS for secure connection
-    client.tls_set()  # Uses default system CA certificates
-    
-    # Assign callback functions
-    client.on_connect = on_connect
-    client.on_message = on_message
-    
-    # Connect to broker
-    print(f"Connecting to {MQTT_BROKER}...")
-    client.connect(MQTT_BROKER, MQTT_PORT, 60)
-    
-    # Start network loop
-    try:
-        client.loop_forever()
-    except KeyboardInterrupt:
-        print("Program interrupted by user")
-    finally:
-        client.disconnect()
-        print("Disconnected from broker")
+#audio-controls {
+margin-top: 20px;
+width: 100%;
+}
 
-if __name__ == "__main__":
-    main()
+#current-time {
+font-size: 18px;
+margin-top: 10px;
+}
+
+.progress-container {
+width: 100%;
+max-width: 500px;
+height: 12px;
+background-color: #444;
+border-radius: 6px;
+margin: 20px auto;
+position: relative;
+cursor: pointer;
+}
+
+.progress-bar {
+height: 100%;
+background-color: #f39c12;
+width: 0%;
+border-radius: 6px;
+transition: width 0.1s linear;
+}
+
+canvas {
+margin-top: 40px;
+background: #222;
+border-radius: 12px;
+}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Welcome to Branden and Caden's Final Project for CS326-A!</h1>
+<h2>Audio Player</h2>
+<form>
+<label for="file-upload">Upload MP3:</label>
+<input type="file" id="file-upload" name="file-upload" title="Select an MP3 file">
+</form>
+
+<div id="audio-controls" style="display: none;">
+<button id="playPauseBtn" class="upload-btn">Play</button>
+<div class="progress-container" id="progress-container">
+<div class="progress-bar" id="progress-bar"></div>
+</div>
+<div id="current-time">00:00</div>
+</div>
+</div>
+
+<script>
+const fileInput = document.getElementById('file-upload');
+const playPauseBtn = document.getElementById('playPauseBtn');
+const currentTimeElem = document.getElementById('current-time');
+const progressBar = document.getElementById('progress-bar');
+const progressContainer = document.getElementById('progress-container');
+let audio = new Audio();
+let isPlaying = false;
+
+// Listen for file selection
+fileInput.addEventListener('change', function () {
+if (fileInput.files.length > 0) {
+const file = fileInput.files[0];
+handleFile(file);
+}
+});
+// Validate file is MP3 format
+function handleFile(file) {
+if (file.type !== "audio/mpeg") {
+alert("Please upload an MP3 file.");
+return;
+}
+ // Read file as data URL
+const reader = new FileReader();
+reader.onload = function () {
+audio.src = reader.result;
+audio.load();
+audio.onloadedmetadata = () => {
+document.getElementById('audio-controls').style.display = 'block';
+updateTimeAndProgress();
+};
+};
+reader.readAsDataURL(file);
+}
+
+playPauseBtn.addEventListener('click', function () {
+if (typeof audioContext === 'undefined') {
+setupAudioProcessing(); // Init audio graph
+}
+// Toggle play/pause state
+if (isPlaying) {
+audio.pause();
+playPauseBtn.textContent = 'Play';
+} else {
+audio.play();
+playPauseBtn.textContent = 'Pause';
+}
+isPlaying = !isPlaying;
+});
+
+function updateTimeAndProgress() {
+setInterval(() => {
+const currentTime = audio.currentTime;
+const duration = audio.duration;
+
+const minutes = Math.floor(currentTime / 60);
+const seconds = Math.floor(currentTime % 60);
+currentTimeElem.textContent = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+
+// Update progress bar width based on current position
+const progressPercent = (currentTime / duration) * 100;
+progressBar.style.width = `${progressPercent}%`;
+}, 200);
+}
+
+let isDragging = false;
+// Handle mouse interactions with the progress bar
+progressContainer.addEventListener('mousedown', (e) => {
+isDragging = true;
+seekAudio(e);
+});
+
+document.addEventListener('mouseup', () => {
+isDragging = false;
+});
+
+document.addEventListener('mousemove', (e) => {
+if (isDragging) {
+const rect = progressContainer.getBoundingClientRect();
+const offsetX = e.clientX - rect.left;
+if (offsetX < 0 || offsetX > rect.width) {
+isDragging = false;
+if (!audio.paused) {
+audio.pause();
+isPlaying = false;
+playPauseBtn.textContent = 'Play';
+}
+return;
+}
+seekAudio(e);
+}
+});
+
+function seekAudio(e) {
+const rect = progressContainer.getBoundingClientRect();
+const offsetX = e.clientX - rect.left;
+const width = rect.width;
+const duration = audio.duration;
+if (offsetX < 0 || offsetX > rect.width) return;
+const newTime = (offsetX / width) * duration;
+audio.currentTime = newTime;
+const progressPercent = (newTime / duration) * 100;
+progressBar.style.width = `${progressPercent}%`;
+}
+// Initialize MQTT client with secure WebSocket connection
+const mqttClient = mqtt.connect("wss://iot.cs.calvin.edu:8083", {
+username: "cs326",
+password: "piot",
+});
+
+mqttClient.on("connect", () => {
+console.log("Connected to MQTT broker");
+});
+// Variables for audio processing
+let audioContext, sourceNode, analyser, dataArray;
+
+function setupAudioProcessing() {
+audioContext = new (window.AudioContext || window.webkitAudioContext)();
+sourceNode = audioContext.createMediaElementSource(audio);
+analyser = audioContext.createAnalyser();
+analyser.fftSize = 2048;
+
+sourceNode.connect(analyser);
+analyser.connect(audioContext.destination);
+
+dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+requestAnimationFrame(processAudio);
+}
+
+function processAudio() {
+analyser.getByteFrequencyData(dataArray);
+
+const bass = dataArray.slice(0, 30);
+const mid = dataArray.slice(31, 180);
+const treble = dataArray.slice(181);
+
+const avg = arr => arr.reduce((sum, v) => sum + v, 0) / arr.length;
+
+const bassVal = Math.floor(avg(bass));
+const midVal = Math.floor(avg(mid));
+const trebleVal = Math.floor(avg(treble));
+
+mqttClient.publish("blh94/bass", bassVal.toString());
+mqttClient.publish("blh94/mid", midVal.toString());
+mqttClient.publish("blh94/treble", trebleVal.toString());
+
+requestAnimationFrame(processAudio);
+}
+</script>
+</body>
+</html>
