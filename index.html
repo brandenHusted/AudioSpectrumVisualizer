@@ -4,75 +4,74 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Audio Player with Visualizer</title>
-<!-- connect to python.py which is a MQTT broker Found here: https://www.emqx.com/en/blog/mqtt-js-tutorial -->
 <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 <style>
 body {
-font-family: Arial, sans-serif;
-background-color: #121212;
-color: white;
-display: flex;
-flex-direction: column;
-align-items: center;
-justify-content: center;
-height: 100vh;
-margin: 0;
-text-align: center;
+    font-family: Arial, sans-serif;
+    background-color: #121212;
+    color: white;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    margin: 0;
+    text-align: center;
 }
 
 .container {
-max-width: 600px;
-padding: 20px;
+    max-width: 600px;
+    padding: 20px;
 }
 
 .upload-btn {
-font-size: 18px;
-padding: 12px 24px;
-background-color: #f39c12;
-color: white;
-border: none;
-border-radius: 8px;
-cursor: pointer;
-transition: background-color 0.3s ease-in-out;
+    font-size: 18px;
+    padding: 12px 24px;
+    background-color: #f39c12;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background-color 0.3s ease-in-out;
 }
 
 .upload-btn:hover {
-background-color: #e67e22;
+    background-color: #e67e22;
 }
 
 #audio-controls {
-margin-top: 20px;
-width: 100%;
+    margin-top: 20px;
+    width: 100%;
 }
 
 #current-time {
-font-size: 18px;
-margin-top: 10px;
+    font-size: 18px;
+    margin-top: 10px;
 }
 
 .progress-container {
-width: 100%;
-max-width: 500px;
-height: 12px;
-background-color: #444;
-border-radius: 6px;
-margin: 20px auto;
-position: relative;
-cursor: pointer;
+    width: 100%;
+    max-width: 500px;
+    height: 12px;
+    background-color: #444;
+    border-radius: 6px;
+    margin: 20px auto;
+    position: relative;
+    cursor: pointer;
 }
 
 .progress-bar {
-height: 100%;
-background-color: #f39c12;
-width: 0%;
-border-radius: 6px;
-transition: width 0.1s linear;
+    height: 100%;
+    background-color: #f39c12;
+    width: 0%;
+    border-radius: 6px;
+    transition: width 0.1s linear;
 }
 
 canvas {
-margin-top: 40px;
-background: #222;
-border-radius: 12px;
+    margin-top: 40px;
+    background: #222;
+    border-radius: 12px;
 }
 </style>
 </head>
@@ -80,211 +79,109 @@ border-radius: 12px;
 <div class="container">
 <h1>Welcome to Branden and Caden's Final Project for CS326-A!</h1>
 <h2>Audio Player</h2>
-<form id="upload-form" enctype="multipart/form-data">
-    <label for="file-upload">Upload MP3/WAV:</label>
-    <input type="file" id="file-upload" name="file" accept="audio/*">
-    <button type="submit" class="upload-btn">Upload and Play</button>
-  </form>
+<form>
+    <label for="file-upload">Upload MP3:</label>
+    <input type="file" id="file-upload" name="file-upload" title="Select an MP3 file">
+</form>
+
 <div id="audio-controls" style="display: none;">
-<button id="playPauseBtn" class="upload-btn">Play</button>
-<div class="progress-container" id="progress-container">
-<div class="progress-bar" id="progress-bar"></div>
-</div>
-<div id="current-time">00:00</div>
+    <button id="playPauseBtn" class="upload-btn">Play</button>
+    <div class="progress-container" id="progress-container">
+        <div class="progress-bar" id="progress-bar"></div>
+    </div>
+    <div id="current-time">00:00</div>
 </div>
 </div>
 
 <script>
-const fileInput = document.getElementById('file-upload');
-const playPauseBtn = document.getElementById('playPauseBtn');
-const currentTimeElem = document.getElementById('current-time');
-const progressBar = document.getElementById('progress-bar');
-const progressContainer = document.getElementById('progress-container');
+// === Audio file setup ===
+const AUDIO_FILE = "/path/to/your/audio/file.wav"; // Adjust to path or file you want
+const FFT_SIZE = 2048;
+const SAMPLE_RATE = 44100; // CD audio quality
+
+// === Setup Web Audio API ===
+let audioContext = new (window.AudioContext || window.webkitAudioContext)();
+let analyser = audioContext.createAnalyser();
+analyser.fftSize = FFT_SIZE;  // Set FFT size
+let bufferSourceNode = audioContext.createBufferSource();
+let dataArray = new Float32Array(analyser.frequencyBinCount);
+
+// === Setup Audio playback ===
 let audio = new Audio();
+audio.crossOrigin = "anonymous"; // Enable cross-origin requests for audio file if needed
 let isPlaying = false;
 
-// Listen for file selection
-fileInput.addEventListener('change', function () {
-if (fileInput.files.length > 0) {
-const file = fileInput.files[0];
-handleFile(file);
-uploadFileToServer(file); 
-}
-});
-// Validate file is MP3 format
-function handleFile(file) {
-if (file.type !== "audio/mpeg") {
-alert("Please upload an MP3 file.");
-return;
-}
- // Read file as data URL
-const reader = new FileReader();
-reader.onload = function () {
-audio.src = reader.result;
-audio.load();
-audio.onloadedmetadata = () => {
-document.getElementById('audio-controls').style.display = 'block';
-updateTimeAndProgress();
-};
-};
-reader.readAsDataURL(file);
-}
-
-playPauseBtn.addEventListener('click', function () {
-if (typeof audioContext === 'undefined') {
-setupAudioProcessing(); // Init audio graph
-}
-// Toggle play/pause state
-if (isPlaying) {
-audio.pause();
-playPauseBtn.textContent = 'Play';
-} else {
-audio.play();
-playPauseBtn.textContent = 'Pause';
-}
-isPlaying = !isPlaying;
-});
-
-function updateTimeAndProgress() {
-setInterval(() => {
-const currentTime = audio.currentTime;
-const duration = audio.duration;
-
-const minutes = Math.floor(currentTime / 60);
-const seconds = Math.floor(currentTime % 60);
-currentTimeElem.textContent = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
-
-// Update progress bar width based on current position
-const progressPercent = (currentTime / duration) * 100;
-progressBar.style.width = `${progressPercent}%`;
-}, 200);
-}
-
-let isDragging = false;
-// Handle mouse interactions with the progress bar
-progressContainer.addEventListener('mousedown', (e) => {
-isDragging = true;
-seekAudio(e);
-});
-
-document.addEventListener('mouseup', () => {
-isDragging = false;
-});
-
-document.addEventListener('mousemove', (e) => {
-if (isDragging) {
-const rect = progressContainer.getBoundingClientRect();
-const offsetX = e.clientX - rect.left;
-if (offsetX < 0 || offsetX > rect.width) {
-isDragging = false;
-if (!audio.paused) {
-audio.pause();
-isPlaying = false;
-playPauseBtn.textContent = 'Play';
-}
-return;
-}
-seekAudio(e);
-}
-});
-
-function seekAudio(e) {
-const rect = progressContainer.getBoundingClientRect();
-const offsetX = e.clientX - rect.left;
-const width = rect.width;
-const duration = audio.duration;
-if (offsetX < 0 || offsetX > rect.width) return;
-const newTime = (offsetX / width) * duration;
-audio.currentTime = newTime;
-const progressPercent = (newTime / duration) * 100;
-progressBar.style.width = `${progressPercent}%`;
-}
-// Initialize MQTT client with secure WebSocket connection
-const mqttClient = mqtt.connect("wss://iot.cs.calvin.edu:8083", {
-username: "cs326",
-password: "piot",
-});
-
-mqttClient.on("connect", () => {
-console.log("Connected to MQTT broker");
-});
-// Variables for audio processing
-let audioContext, sourceNode, analyser, dataArray;
-
-function setupAudioProcessing() {
-audioContext = new (window.AudioContext || window.webkitAudioContext)();
-sourceNode = audioContext.createMediaElementSource(audio);
-analyser = audioContext.createAnalyser();
-analyser.fftSize = 2048;
-
-sourceNode.connect(analyser);
-analyser.connect(audioContext.destination);
-
-dataArray = new Uint8Array(analyser.frequencyBinCount);
-
-// requestAnimationFrame(processAudio);
-}
-
-// function processAudio() {
-// analyser.getByteFrequencyData(dataArray);
-
-// const bass = dataArray.slice(0, 30);
-// const mid = dataArray.slice(31, 180);
-// const treble = dataArray.slice(181);
-
-// const avg = arr => arr.reduce((sum, v) => sum + v, 0) / arr.length;
-
-// const bassVal = Math.floor(avg(bass));
-// const midVal = Math.floor(avg(mid));
-// const trebleVal = Math.floor(avg(treble));
-
-// mqttClient.publish("blh94/bass", bassVal.toString());
-// mqttClient.publish("blh94/mid", midVal.toString());
-// mqttClient.publish("blh94/treble", trebleVal.toString());
-
-// requestAnimationFrame(processAudio);
-// }
-
-document.getElementById("upload-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const file = document.getElementById("file-upload").files[0];
-  if (!file) return alert("Please select a file.");
-
-  const formData = new FormData();
-  formData.append("file", file);
-
-  const response = await fetch("/upload", {
-    method: "POST",
-    body: formData
-  });
-
-  if (response.ok) {
-    alert("File uploaded successfully! Audio analysis has started.");
-  } else {
-    alert("Failed to upload file.");
-  }
-});
-
-function uploadFileToServer(file) {
-    const formData = new FormData();
-    formData.append("file", file);
-
-    fetch("/upload", {
-        method: "POST",
-        body: formData
-    })
-    .then(response => {
-        if (response.ok) {
-            console.log("File uploaded and processed successfully.");
-        } else {
-            console.error("Failed to process file on server.");
+// === Audio File Load and Setup ===
+function loadAudioFile() {
+    const fileInput = document.getElementById('file-upload');
+    fileInput.addEventListener('change', function () {
+        if (fileInput.files.length > 0) {
+            const file = fileInput.files[0];
+            const reader = new FileReader();
+            reader.onload = function () {
+                audio.src = reader.result;
+                audio.load();
+                audio.onloadedmetadata = () => {
+                    document.getElementById('audio-controls').style.display = 'block';
+                    startProcessingAudio();
+                };
+            };
+            reader.readAsDataURL(file);
         }
-    })
-    .catch(error => {
-        console.error("Upload error:", error);
     });
 }
 
+// === Audio Frequency Band Mapping ===
+const BASS_CUTOFF = 200;  // Hz
+const MID_CUTOFF = 2000;  // Hz
+
+function startProcessingAudio() {
+    let i = 0;
+
+    function processAudio() {
+        analyser.getFloatFrequencyData(dataArray);
+
+        // Calculate frequency bins (based on FFT size and sample rate)
+        const bass = dataArray.slice(0, Math.floor(BASS_CUTOFF * FFT_SIZE / SAMPLE_RATE));
+        const mid = dataArray.slice(Math.floor(BASS_CUTOFF * FFT_SIZE / SAMPLE_RATE), Math.floor(MID_CUTOFF * FFT_SIZE / SAMPLE_RATE));
+        const treble = dataArray.slice(Math.floor(MID_CUTOFF * FFT_SIZE / SAMPLE_RATE));
+
+        // Calculate average value for each frequency band
+        const avg = arr => arr.reduce((sum, v) => sum + v, 0) / arr.length;
+        const bassVal = Math.floor(avg(bass));
+        const midVal = Math.floor(avg(mid));
+        const trebleVal = Math.floor(avg(treble));
+
+        // Publish values to MQTT (or log to console)
+        console.log("Bass:", bassVal);
+        console.log("Mid:", midVal);
+        console.log("Treble:", trebleVal);
+
+        // Continue the audio processing
+        if (!audio.paused) {
+            requestAnimationFrame(processAudio);
+        }
+    }
+
+    requestAnimationFrame(processAudio);
+}
+
+// === Play/Pause Control ===
+function togglePlayPause() {
+    if (isPlaying) {
+        audio.pause();
+        isPlaying = false;
+    } else {
+        audio.play();
+        isPlaying = true;
+    }
+}
+
+// === Load audio when page is ready ===
+loadAudioFile();
+
+// Example of usage: Trigger the play/pause when a button is clicked
+document.getElementById("playPauseBtn").addEventListener("click", togglePlayPause);
 </script>
 </body>
 </html>
