@@ -108,6 +108,7 @@ fileInput.addEventListener('change', function () {
 if (fileInput.files.length > 0) {
 const file = fileInput.files[0];
 handleFile(file);
+uploadFileToServer(file); 
 }
 });
 // Validate file is MP3 format
@@ -130,9 +131,9 @@ reader.readAsDataURL(file);
 }
 
 playPauseBtn.addEventListener('click', function () {
-// if (typeof audioContext === 'undefined') {
-// setupAudioProcessing(); // Init audio graph
-// }
+if (typeof audioContext === 'undefined') {
+setupAudioProcessing(); // Init audio graph
+}
 // Toggle play/pause state
 if (isPlaying) {
 audio.pause();
@@ -208,21 +209,21 @@ mqttClient.on("connect", () => {
 console.log("Connected to MQTT broker");
 });
 // Variables for audio processing
-// let audioContext, sourceNode, analyser, dataArray;
+let audioContext, sourceNode, analyser, dataArray;
 
-// function setupAudioProcessing() {
-// audioContext = new (window.AudioContext || window.webkitAudioContext)();
-// sourceNode = audioContext.createMediaElementSource(audio);
-// analyser = audioContext.createAnalyser();
-// analyser.fftSize = 2048;
+function setupAudioProcessing() {
+audioContext = new (window.AudioContext || window.webkitAudioContext)();
+sourceNode = audioContext.createMediaElementSource(audio);
+analyser = audioContext.createAnalyser();
+analyser.fftSize = 2048;
 
-// sourceNode.connect(analyser);
-// analyser.connect(audioContext.destination);
+sourceNode.connect(analyser);
+analyser.connect(audioContext.destination);
 
-// dataArray = new Uint8Array(analyser.frequencyBinCount);
+dataArray = new Uint8Array(analyser.frequencyBinCount);
 
 // requestAnimationFrame(processAudio);
-// }
+}
 
 // function processAudio() {
 // analyser.getByteFrequencyData(dataArray);
@@ -264,6 +265,25 @@ document.getElementById("upload-form").addEventListener("submit", async (e) => {
   }
 });
 
+function uploadFileToServer(file) {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    fetch("/upload", {
+        method: "POST",
+        body: formData
+    })
+    .then(response => {
+        if (response.ok) {
+            console.log("File uploaded and processed successfully.");
+        } else {
+            console.error("Failed to process file on server.");
+        }
+    })
+    .catch(error => {
+        console.error("Upload error:", error);
+    });
+}
 
 </script>
 </body>
