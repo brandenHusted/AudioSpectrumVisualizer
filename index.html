@@ -130,9 +130,9 @@ reader.readAsDataURL(file);
 }
 
 playPauseBtn.addEventListener('click', function () {
-if (typeof audioContext === 'undefined') {
-setupAudioProcessing(); // Init audio graph
-}
+// if (typeof audioContext === 'undefined') {
+// setupAudioProcessing(); // Init audio graph
+// }
 // Toggle play/pause state
 if (isPlaying) {
 audio.pause();
@@ -208,41 +208,41 @@ mqttClient.on("connect", () => {
 console.log("Connected to MQTT broker");
 });
 // Variables for audio processing
-let audioContext, sourceNode, analyser, dataArray;
+// let audioContext, sourceNode, analyser, dataArray;
 
-function setupAudioProcessing() {
-audioContext = new (window.AudioContext || window.webkitAudioContext)();
-sourceNode = audioContext.createMediaElementSource(audio);
-analyser = audioContext.createAnalyser();
-analyser.fftSize = 2048;
+// function setupAudioProcessing() {
+// audioContext = new (window.AudioContext || window.webkitAudioContext)();
+// sourceNode = audioContext.createMediaElementSource(audio);
+// analyser = audioContext.createAnalyser();
+// analyser.fftSize = 2048;
 
-sourceNode.connect(analyser);
-analyser.connect(audioContext.destination);
+// sourceNode.connect(analyser);
+// analyser.connect(audioContext.destination);
 
-dataArray = new Uint8Array(analyser.frequencyBinCount);
+// dataArray = new Uint8Array(analyser.frequencyBinCount);
 
-requestAnimationFrame(processAudio);
-}
+// requestAnimationFrame(processAudio);
+// }
 
-function processAudio() {
-analyser.getByteFrequencyData(dataArray);
+// function processAudio() {
+// analyser.getByteFrequencyData(dataArray);
 
-const bass = dataArray.slice(0, 30);
-const mid = dataArray.slice(31, 180);
-const treble = dataArray.slice(181);
+// const bass = dataArray.slice(0, 30);
+// const mid = dataArray.slice(31, 180);
+// const treble = dataArray.slice(181);
 
-const avg = arr => arr.reduce((sum, v) => sum + v, 0) / arr.length;
+// const avg = arr => arr.reduce((sum, v) => sum + v, 0) / arr.length;
 
-const bassVal = Math.floor(avg(bass));
-const midVal = Math.floor(avg(mid));
-const trebleVal = Math.floor(avg(treble));
+// const bassVal = Math.floor(avg(bass));
+// const midVal = Math.floor(avg(mid));
+// const trebleVal = Math.floor(avg(treble));
 
-mqttClient.publish("blh94/bass", bassVal.toString());
-mqttClient.publish("blh94/mid", midVal.toString());
-mqttClient.publish("blh94/treble", trebleVal.toString());
+// mqttClient.publish("blh94/bass", bassVal.toString());
+// mqttClient.publish("blh94/mid", midVal.toString());
+// mqttClient.publish("blh94/treble", trebleVal.toString());
 
-requestAnimationFrame(processAudio);
-}
+// requestAnimationFrame(processAudio);
+// }
 
 document.getElementById("upload-form").addEventListener("submit", async (e) => {
   e.preventDefault();
