@@ -94,24 +94,32 @@ canvas {
 </div>
 
 <script>
+// === MQTT Setup ===
+const MQTT_BROKER = "wss://iot.cs.calvin.edu:8083";
+const MQTT_USERNAME = "cs326";
+const MQTT_PASSWORD = "piot";
+const BASS_TOPIC = "blh94/bass";
+const MID_TOPIC = "blh94/mid";
+const TREBLE_TOPIC = "blh94/treble";
+
+// Connect to MQTT broker
+const mqttClient = mqtt.connect(MQTT_BROKER, {
+    username: MQTT_USERNAME,
+    password: MQTT_PASSWORD,
+});
+
+mqttClient.on("connect", () => {
+    console.log("Connected to MQTT broker");
+});
+
 // === Audio file setup ===
-const AUDIO_FILE = "/path/to/your/audio/file.wav"; // Adjust to path or file you want
 const FFT_SIZE = 2048;
-const SAMPLE_RATE = 44100; // CD audio quality
-
-// === Setup Web Audio API ===
-let audioContext = new (window.AudioContext || window.webkitAudioContext)();
-let analyser = audioContext.createAnalyser();
-analyser.fftSize = FFT_SIZE;  // Set FFT size
-let bufferSourceNode = audioContext.createBufferSource();
-let dataArray = new Float32Array(analyser.frequencyBinCount);
-
-// === Setup Audio playback ===
+const SAMPLE_RATE = 44100;
 let audio = new Audio();
-audio.crossOrigin = "anonymous"; // Enable cross-origin requests for audio file if needed
 let isPlaying = false;
+let analyser, dataArray, audioContext, bufferSourceNode;
 
-// === Audio File Load and Setup ===
+// === Audio file loading and setup ===
 function loadAudioFile() {
     const fileInput = document.getElementById('file-upload');
     fileInput.addEventListener('change', function () {
@@ -136,34 +144,50 @@ const BASS_CUTOFF = 200;  // Hz
 const MID_CUTOFF = 2000;  // Hz
 
 function startProcessingAudio() {
-    let i = 0;
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = FFT_SIZE;
+    bufferSourceNode = audioContext.createBufferSource();
+    dataArray = new Float32Array(analyser.frequencyBinCount);
 
-    function processAudio() {
-        analyser.getFloatFrequencyData(dataArray);
+    // Setup audio context
+    const request = new XMLHttpRequest();
+    request.open('GET', audio.src, true);
+    request.responseType = 'arraybuffer';
 
-        // Calculate frequency bins (based on FFT size and sample rate)
-        const bass = dataArray.slice(0, Math.floor(BASS_CUTOFF * FFT_SIZE / SAMPLE_RATE));
-        const mid = dataArray.slice(Math.floor(BASS_CUTOFF * FFT_SIZE / SAMPLE_RATE), Math.floor(MID_CUTOFF * FFT_SIZE / SAMPLE_RATE));
-        const treble = dataArray.slice(Math.floor(MID_CUTOFF * FFT_SIZE / SAMPLE_RATE));
+    request.onload = function () {
+        audioContext.decodeAudioData(request.response, function (buffer) {
+            bufferSourceNode.buffer = buffer;
+            bufferSourceNode.connect(analyser);
+            analyser.connect(audioContext.destination);
+            bufferSourceNode.start(0);
+            processAudio();
+        });
+    };
+    request.send();
+}
 
-        // Calculate average value for each frequency band
-        const avg = arr => arr.reduce((sum, v) => sum + v, 0) / arr.length;
-        const bassVal = Math.floor(avg(bass));
-        const midVal = Math.floor(avg(mid));
-        const trebleVal = Math.floor(avg(treble));
+// === Audio Frequency Processing ===
+function processAudio() {
+    analyser.getFloatFrequencyData(dataArray);
 
-        // Publish values to MQTT (or log to console)
-        console.log("Bass:", bassVal);
-        console.log("Mid:", midVal);
-        console.log("Treble:", trebleVal);
+    const bass = dataArray.slice(0, Math.floor(BASS_CUTOFF * FFT_SIZE / SAMPLE_RATE));
+    const mid = dataArray.slice(Math.floor(BASS_CUTOFF * FFT_SIZE / SAMPLE_RATE), Math.floor(MID_CUTOFF * FFT_SIZE / SAMPLE_RATE));
+    const treble = dataArray.slice(Math.floor(MID_CUTOFF * FFT_SIZE / SAMPLE_RATE));
 
-        // Continue the audio processing
-        if (!audio.paused) {
-            requestAnimationFrame(processAudio);
-        }
+    const avg = arr => arr.reduce((sum, v) => sum + v, 0) / arr.length;
+    const bassVal = Math.floor(avg(bass));
+    const midVal = Math.floor(avg(mid));
+    const trebleVal = Math.floor(avg(treble));
+
+    // Publish to MQTT
+    mqttClient.publish(BASS_TOPIC, bassVal.toString());
+    mqttClient.publish(MID_TOPIC, midVal.toString());
+    mqttClient.publish(TREBLE_TOPIC, trebleVal.toString());
+
+    if (!audio.paused) {
+        requestAnimationFrame(processAudio);
     }
-
-    requestAnimationFrame(processAudio);
 }
 
 // === Play/Pause Control ===
@@ -171,18 +195,36 @@ function togglePlayPause() {
     if (isPlaying) {
         audio.pause();
         isPlaying = false;
+        playPauseBtn.textContent = "Play";
     } else {
         audio.play();
         isPlaying = true;
+        playPauseBtn.textContent = "Pause";
     }
 }
+
+// === Progress Bar Update ===
+function updateProgressBar() {
+    const currentTime = audio.currentTime;
+    const duration = audio.duration;
+
+    const progressPercent = (currentTime / duration) * 100;
+    document.getElementById("progress-bar").style.width = `${progressPercent}%`;
+
+    const minutes = Math.floor(currentTime / 60);
+    const seconds = Math.floor(currentTime % 60);
+    document.getElementById("current-time").textContent = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+}
+
+// Update progress bar every 100ms
+setInterval(updateProgressBar, 100);
 
 // === Load audio when page is ready ===
 loadAudioFile();
 
-// Example of usage: Trigger the play/pause when a button is clicked
-document.getElementById("playPauseBtn").addEventListener("click", togglePlayPause);
+// Play/Pause button click event
+const playPauseBtn = document.getElementById("playPauseBtn");
+playPauseBtn.addEventListener("click", togglePlayPause);
 </script>
 </body>
 </html>
-
