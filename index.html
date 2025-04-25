@@ -109,11 +109,7 @@
   });
   
   function handleFile(file) {
-  if (file.type !== "audio/mpeg") {
-  alert("Please upload an MP3 file.");
-  return;
-  }
-  
+ 
   const reader = new FileReader();
   reader.onload = function () {
   audio.src = reader.result;
