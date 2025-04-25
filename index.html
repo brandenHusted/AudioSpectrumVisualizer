@@ -1,12 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Audio Player with Visualizer</title>
-<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
-<style>
-body {
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Audio Player with Visualizer</title>
+  <!-- connect to python.py which is a MQTT broker Found here: https://www.emqx.com/en/blog/mqtt-js-tutorial -->
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <style>
+  body {
     font-family: Arial, sans-serif;
     background-color: #121212;
     color: white;
@@ -17,14 +18,14 @@ body {
     height: 100vh;
     margin: 0;
     text-align: center;
-}
-
-.container {
+  }
+  
+  .container {
     max-width: 600px;
     padding: 20px;
-}
-
-.upload-btn {
+  }
+  
+  .upload-btn {
     font-size: 18px;
     padding: 12px 24px;
     background-color: #f39c12;
@@ -33,23 +34,23 @@ body {
     border-radius: 8px;
     cursor: pointer;
     transition: background-color 0.3s ease-in-out;
-}
-
-.upload-btn:hover {
+  }
+  
+  .upload-btn:hover {
     background-color: #e67e22;
-}
-
-#audio-controls {
+  }
+  
+  #audio-controls {
     margin-top: 20px;
     width: 100%;
-}
-
-#current-time {
+  }
+  
+  #current-time {
     font-size: 18px;
     margin-top: 10px;
-}
-
-.progress-container {
+  }
+  
+  .progress-container {
     width: 100%;
     max-width: 500px;
     height: 12px;
@@ -58,173 +59,213 @@ body {
     margin: 20px auto;
     position: relative;
     cursor: pointer;
-}
-
-.progress-bar {
+  }
+  
+  .progress-bar {
     height: 100%;
     background-color: #f39c12;
     width: 0%;
     border-radius: 6px;
     transition: width 0.1s linear;
-}
-
-canvas {
+  }
+  
+  canvas {
     margin-top: 40px;
     background: #222;
     border-radius: 12px;
-}
-</style>
+  }
+  </style>
 </head>
 <body>
 <div class="container">
-<h1>Welcome to Branden and Caden's Final Project for CS326-A!</h1>
-<h2>Audio Player</h2>
-<form>
+  <h1>Welcome to Branden and Caden's Final Project for CS326-A!</h1>
+  <h2>Audio Player</h2>
+  <form>
     <label for="file-upload">Upload MP3:</label>
     <input type="file" id="file-upload" name="file-upload" title="Select an MP3 file">
-</form>
-
-<div id="audio-controls" style="display: none;">
+  </form>
+  
+  <div id="audio-controls" style="display: none;">
     <button id="playPauseBtn" class="upload-btn">Play</button>
     <div class="progress-container" id="progress-container">
-        <div class="progress-bar" id="progress-bar"></div>
+      <div class="progress-bar" id="progress-bar"></div>
     </div>
     <div id="current-time">00:00</div>
+  </div>
 </div>
-</div>
-
+  
 <script>
-// === MQTT Setup ===
-const MQTT_BROKER = "wss://iot.cs.calvin.edu:8083";
-const MQTT_USERNAME = "cs326";
-const MQTT_PASSWORD = "piot";
-const BASS_TOPIC = "blh94/bass";
-const MID_TOPIC = "blh94/mid";
-const TREBLE_TOPIC = "blh94/treble";
-
-// Connect to MQTT broker
-const mqttClient = mqtt.connect(MQTT_BROKER, {
-    username: MQTT_USERNAME,
-    password: MQTT_PASSWORD,
-});
-
-mqttClient.on("connect", () => {
+  const fileInput = document.getElementById('file-upload');
+  const playPauseBtn = document.getElementById('playPauseBtn');
+  const currentTimeElem = document.getElementById('current-time');
+  const progressBar = document.getElementById('progress-bar');
+  const progressContainer = document.getElementById('progress-container');
+  
+  // === Audio file setup ===
+  const FFT_SIZE = 2048;
+  const SAMPLE_RATE = 44100;
+  let audio = new Audio();
+  let isPlaying = false;
+  let analyser, dataArray, audioContext, bufferSourceNode;
+  
+  // === MQTT Setup ===
+  const BASS_TOPIC = "blh94/bass";
+  const MID_TOPIC = "blh94/mid";
+  const TREBLE_TOPIC = "blh94/treble";
+  
+  const mqttClient = mqtt.connect("wss://iot.cs.calvin.edu:8083", {
+    username: "cs326",
+    password: "piot",
+  });
+  
+  mqttClient.on("connect", () => {
     console.log("Connected to MQTT broker");
-});
-
-// === Audio file setup ===
-const FFT_SIZE = 2048;
-const SAMPLE_RATE = 44100;
-let audio = new Audio();
-let isPlaying = false;
-let analyser, dataArray, audioContext, bufferSourceNode;
-
-// === Audio file loading and setup ===
-function loadAudioFile() {
-    const fileInput = document.getElementById('file-upload');
-    fileInput.addEventListener('change', function () {
-        if (fileInput.files.length > 0) {
-            const file = fileInput.files[0];
-            const reader = new FileReader();
-            reader.onload = function () {
-                audio.src = reader.result;
-                audio.load();
-                audio.onloadedmetadata = () => {
-                    document.getElementById('audio-controls').style.display = 'block';
-                    startProcessingAudio();
-                };
-            };
-            reader.readAsDataURL(file);
+  });
+  
+  // === Audio file loading and setup ===
+  fileInput.addEventListener('change', function () {
+    if (fileInput.files.length > 0) {
+      const file = fileInput.files[0];
+      handleFile(file);
+    }
+  });
+  
+  function handleFile(file) {
+    if (file.type !== "audio/mpeg") {
+      alert("Please upload an MP3 file.");
+      return;
+    }
+    
+    const reader = new FileReader();
+    reader.onload = function () {
+      audio.src = reader.result;
+      audio.load();
+      audio.onloadedmetadata = () => {
+        document.getElementById('audio-controls').style.display = 'block';
+        updateTimeAndProgress();
+      };
+    };
+    reader.readAsDataURL(file);
+  }
+  
+  playPauseBtn.addEventListener('click', function () {
+    if (typeof audioContext === 'undefined') {
+      startProcessingAudio(); // Init audio graph
+    }
+    if (isPlaying) {
+      audio.pause();
+      playPauseBtn.textContent = 'Play';
+    } else {
+      audio.play();
+      playPauseBtn.textContent = 'Pause';
+    }
+    isPlaying = !isPlaying;
+  });
+  
+  function updateTimeAndProgress() {
+    setInterval(() => {
+      const currentTime = audio.currentTime;
+      const duration = audio.duration;
+      
+      const minutes = Math.floor(currentTime / 60);
+      const seconds = Math.floor(currentTime % 60);
+      currentTimeElem.textContent = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+      
+      const progressPercent = (currentTime / duration) * 100;
+      progressBar.style.width = `${progressPercent}%`;
+    }, 200);
+  }
+  
+  let isDragging = false;
+  
+  progressContainer.addEventListener('mousedown', (e) => {
+    isDragging = true;
+    seekAudio(e);
+  });
+  
+  document.addEventListener('mouseup', () => {
+    isDragging = false;
+  });
+  
+  document.addEventListener('mousemove', (e) => {
+    if (isDragging) {
+      const rect = progressContainer.getBoundingClientRect();
+      const offsetX = e.clientX - rect.left;
+      if (offsetX < 0 || offsetX > rect.width) {
+        isDragging = false;
+        if (!audio.paused) {
+          audio.pause();
+          isPlaying = false;
+          playPauseBtn.textContent = 'Play';
         }
-    });
-}
-
-// === Audio Frequency Band Mapping ===
-const BASS_CUTOFF = 200;  // Hz
-const MID_CUTOFF = 2000;  // Hz
-
-function startProcessingAudio() {
+        return;
+      }
+      seekAudio(e);
+    }
+  });
+  
+  function seekAudio(e) {
+    const rect = progressContainer.getBoundingClientRect();
+    const offsetX = e.clientX - rect.left;
+    const width = rect.width;
+    const duration = audio.duration;
+    if (offsetX < 0 || offsetX > rect.width) return;
+    const newTime = (offsetX / width) * duration;
+    audio.currentTime = newTime;
+    const progressPercent = (newTime / duration) * 100;
+    progressBar.style.width = `${progressPercent}%`;
+  }
+  
+  // === Audio Frequency Band Mapping ===
+  const BASS_CUTOFF = 200;  // Hz
+  const MID_CUTOFF = 2000;  // Hz
+  
+  function startProcessingAudio() {
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
     analyser = audioContext.createAnalyser();
     analyser.fftSize = FFT_SIZE;
     bufferSourceNode = audioContext.createBufferSource();
     dataArray = new Float32Array(analyser.frequencyBinCount);
-
+  
     // Setup audio context
     const request = new XMLHttpRequest();
     request.open('GET', audio.src, true);
     request.responseType = 'arraybuffer';
-
+  
     request.onload = function () {
-        audioContext.decodeAudioData(request.response, function (buffer) {
-            bufferSourceNode.buffer = buffer;
-            bufferSourceNode.connect(analyser);
-            analyser.connect(audioContext.destination);
-            bufferSourceNode.start(0);
-            processAudio();
-        });
+      audioContext.decodeAudioData(request.response, function (buffer) {
+        bufferSourceNode.buffer = buffer;
+        bufferSourceNode.connect(analyser);
+        analyser.connect(audioContext.destination);
+        bufferSourceNode.start(0);
+        processAudio();
+      });
     };
     request.send();
-}
-
-// === Audio Frequency Processing ===
-function processAudio() {
+  }
+  
+  // === Audio Frequency Processing ===
+  function processAudio() {
     analyser.getFloatFrequencyData(dataArray);
-
+  
     const bass = dataArray.slice(0, Math.floor(BASS_CUTOFF * FFT_SIZE / SAMPLE_RATE));
     const mid = dataArray.slice(Math.floor(BASS_CUTOFF * FFT_SIZE / SAMPLE_RATE), Math.floor(MID_CUTOFF * FFT_SIZE / SAMPLE_RATE));
     const treble = dataArray.slice(Math.floor(MID_CUTOFF * FFT_SIZE / SAMPLE_RATE));
-
+  
     const avg = arr => arr.reduce((sum, v) => sum + v, 0) / arr.length;
     const bassVal = Math.floor(avg(bass));
     const midVal = Math.floor(avg(mid));
     const trebleVal = Math.floor(avg(treble));
-
+  
     // Publish to MQTT
     mqttClient.publish(BASS_TOPIC, bassVal.toString());
     mqttClient.publish(MID_TOPIC, midVal.toString());
     mqttClient.publish(TREBLE_TOPIC, trebleVal.toString());
-
+  
     if (!audio.paused) {
-        requestAnimationFrame(processAudio);
+      requestAnimationFrame(processAudio);
     }
-}
-
-// === Play/Pause Control ===
-function togglePlayPause() {
-    if (isPlaying) {
-        audio.pause();
-        isPlaying = false;
-        playPauseBtn.textContent = "Play";
-    } else {
-        audio.play();
-        isPlaying = true;
-        playPauseBtn.textContent = "Pause";
-    }
-}
-
-// === Progress Bar Update ===
-function updateProgressBar() {
-    const currentTime = audio.currentTime;
-    const duration = audio.duration;
-
-    const progressPercent = (currentTime / duration) * 100;
-    document.getElementById("progress-bar").style.width = `${progressPercent}%`;
-
-    const minutes = Math.floor(currentTime / 60);
-    const seconds = Math.floor(currentTime % 60);
-    document.getElementById("current-time").textContent = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
-}
-
-// Update progress bar every 100ms
-setInterval(updateProgressBar, 100);
-
-// === Load audio when page is ready ===
-loadAudioFile();
-
-// Play/Pause button click event
-const playPauseBtn = document.getElementById("playPauseBtn");
-playPauseBtn.addEventListener("click", togglePlayPause);
+  }
 </script>
 </body>
 </html>

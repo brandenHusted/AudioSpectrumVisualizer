@@ -90,45 +90,45 @@ def on_message(client, userdata, msg):
     print(f'MQTT message received -> topic:{msg.topic}, message:{msg.payload}')
     
     try:
-        # Parse the string array from the message
-        string_array = json.loads(msg.payload.decode('utf-8'))
+        # Parse the single value from the message
+        value_str = msg.payload.decode('utf-8')
         
-        # Convert string values to float numbers
-        num_array = []
-        for value in string_array:
-            try:
-                # Try to convert each string to a float
-                num_array.append(float(value))
-            except ValueError:
-                # If conversion fails, use 0.0
-                print(f"Could not convert value '{value}' to float, using 0.0 instead")
-                num_array.append(0.0)
+        try:
+            # Convert string to float
+            value = float(value_str)
+        except ValueError:
+            print(f"Could not convert value '{value_str}' to float, using 0.0 instead")
+            value = 0.0
         
-        # Ensure we have at least NUM_LEDS_PER_GROUP values
-        while len(num_array) < NUM_LEDS_PER_GROUP:
-            num_array.append(0.0)
+        # Create an array with the value distributed across LEDs
+        # Adjust the scaling as needed to make the visualization more dramatic
+        value_scaled = max(0, min(value, 0))  # Ensure value is not too extreme
         
-        # Use only the first NUM_LEDS_PER_GROUP values
-        num_array = num_array[:NUM_LEDS_PER_GROUP]
+        # Create gradient pattern - brightest in middle, dimmer on ends
+        gradient = np.ones(NUM_LEDS_PER_GROUP)
+        for i in range(NUM_LEDS_PER_GROUP):
+            pos = abs((i - (NUM_LEDS_PER_GROUP-1)/2) / ((NUM_LEDS_PER_GROUP-1)/2))
+            gradient[i] = 1 - 0.5 * pos  # Less extreme gradient
+        
+        # Apply value to gradient pattern
+        value_array = gradient * value_scaled
         
         # Update the appropriate frequency band data
         if msg.topic == TOPIC_B:
             # Process bass frequency data
-            bass_data = np.array(num_array)
+            bass_data = value_array
             bass_data = normalize(bass_data)
         elif msg.topic == TOPIC_M:
             # Process mid frequency data
-            mid_data = np.array(num_array)
+            mid_data = value_array
             mid_data = normalize(mid_data)
         elif msg.topic == TOPIC_T:
             # Process treble frequency data
-            treble_data = np.array(num_array)
+            treble_data = value_array
             treble_data = normalize(treble_data)
         
         new_data_received = True
         
-    except json.JSONDecodeError:
-        print(f"Error decoding JSON message: {msg.payload}")
     except Exception as e:
         print(f"Error processing message: {e}")
 
