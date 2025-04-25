@@ -2,7 +2,6 @@
 # This python program connects to an MQTT publisher and gatheres the published music frequencies
 # The program then uses these frequencies to drive LEDs connected on a raspberry pi to create an audio visualizer
 # Code is comprised of work from Prof. Derek Schurrman, and Caden Ziskie with the aid of ChatGPT and ClaudeAI
-
 import time
 import numpy as np
 import json
@@ -42,36 +41,61 @@ bass_data = np.zeros(NUM_LEDS_PER_GROUP)
 mid_data = np.zeros(NUM_LEDS_PER_GROUP)
 treble_data = np.zeros(NUM_LEDS_PER_GROUP)
 
+# Thresholds for frequency bands (adjust these based on your observations)
+BASS_MIN = 150    # Threshold for silence (below this is silent)
+BASS_MAX = 250    # Threshold for maximum intensity for bass
+
+MID_MIN = 50     # Threshold for silence
+MID_MAX = 175     # Threshold for maximum intensity for mids
+
+TREBLE_MIN = 25  # Threshold for silence
+TREBLE_MAX = 100  # Threshold for maximum intensity for treble
+
 # Flag to indicate if new data has been received
 new_data_received = False
 
 # === LED Update Functions ===
-def normalize(data):
-    return (data / (np.max(data) if np.max(data) > 0 else 1)) * 0xFFF
-
-def update_leds_for_band(led_group, brightness):
-    max_brightness = 0xFFF
-    total_energy = np.sum(brightness) / (NUM_LEDS_PER_GROUP * (max_brightness * 0.7))
-    num_active_leds = min(int(total_energy * NUM_LEDS_PER_GROUP), NUM_LEDS_PER_GROUP)
-
+def update_leds_for_band(led_group, intensity_value):
+    """
+    Update LEDs for a frequency band based on intensity value (0-1)
+    Using a stepped approach - LEDs light up progressively as intensity increases
+    """
+    max_brightness = 0xFFF  # 12-bit PWM full brightness
+    
+    # Determine how many LEDs to light based on intensity
+    # Map intensity 0-1 to 0-NUM_LEDS_PER_GROUP
+    num_leds_to_light = min(NUM_LEDS_PER_GROUP, round(intensity_value * NUM_LEDS_PER_GROUP))
+    
+    # Set brightness levels - in this implementation:
+    # - First LEDs to light up are at lower positions (0, 1, etc.)
+    # - Later LEDs (higher positions) only light up at higher intensities
+    # - Each LED gets progressively brighter as intensity increases
     for i in range(NUM_LEDS_PER_GROUP):
-        if i < num_active_leds:
-            if total_energy > 0.8:
-                brightness_value = max_brightness  # Full brightness
-            elif total_energy > 0.6:
-                brightness_value = int(max_brightness * 0.75)  # Bright
-            elif total_energy > 0.4:
-                brightness_value = int(max_brightness * 0.5)  # Medium
-            else:
-                brightness_value = int(max_brightness * 0.2)  # Dim
+        if i < num_leds_to_light:
+            # Calculate brightness for this specific LED
+            # More dramatic effect: earlier LEDs brighter, later LEDs dimmer
+            position_factor = 1.0 - (i / NUM_LEDS_PER_GROUP) * 0.5
+            
+            # Calculate LED-specific brightness (0-1 scale)
+            led_brightness = position_factor * intensity_value
+            
+            # Scale to PWM range and apply
+            pca.channels[led_group + i].duty_cycle = int(led_brightness * max_brightness)
         else:
-            brightness_value = 0
-        pca.channels[led_group + i].duty_cycle = brightness_value
+            # Turn off LEDs beyond the active count
+            pca.channels[led_group + i].duty_cycle = 0
 
 def update_all_leds():
-    update_leds_for_band(0, bass_data)
-    update_leds_for_band(NUM_LEDS_PER_GROUP, mid_data)
-    update_leds_for_band(2 * NUM_LEDS_PER_GROUP, treble_data)
+    """Update all LED groups based on current frequency data"""
+    # Calculate the maximum value for each band to determine active LEDs
+    bass_intensity = np.max(bass_data)
+    mid_intensity = np.max(mid_data)
+    treble_intensity = np.max(treble_data)
+    
+    # Update each LED group
+    update_leds_for_band(0, bass_intensity)
+    update_leds_for_band(NUM_LEDS_PER_GROUP, mid_intensity)
+    update_leds_for_band(2 * NUM_LEDS_PER_GROUP, treble_intensity)
 
 # === MQTT Callbacks ===
 def on_connect(client, userdata, flags, reason_code, properties):
@@ -97,47 +121,74 @@ def on_message(client, userdata, msg):
             # Try to convert the string to a float
             value = float(value_str)
             
-            # Adjust for negative dB values from getFloatFrequencyData
-            # Convert from typical range (-100 to 0 dB) to (0 to 1) for LED intensity
-            # Normalize approximately -80dB (very quiet) to -30dB (loud)
-            if value < -80:
-                value = 0  # Below threshold, treat as silence
-            elif value > -30:
-                value = 1  # Very loud, max brightness
-            else:
-                # Linear mapping from -80dB to -30dB -> 0 to 1
-                value = (value + 80) / 50
-            
-            # Create an array with the value distributed as a pattern
-            # Create a bell curve or gradient pattern for visualization
-            pattern = np.zeros(NUM_LEDS_PER_GROUP)
-            
-            # Center-weighted pattern (stronger in middle, weaker at edges)
-            mid_point = (NUM_LEDS_PER_GROUP - 1) / 2
-            for i in range(NUM_LEDS_PER_GROUP):
-                distance = abs(i - mid_point)
-                weight = 1.0 - (distance / mid_point) * 0.5  # Gentle slope
-                pattern[i] = value * weight
+            # Map the value to an appropriate intensity based on the frequency band
+            if msg.topic == TOPIC_B:
+                # Process bass frequency data
+                intensity = map_value_to_intensity(value, BASS_MIN, BASS_MAX)
+                # Create intensity array with a pattern
+                bass_data = create_intensity_pattern(intensity)
                 
+            elif msg.topic == TOPIC_M:
+                # Process mid frequency data
+                intensity = map_value_to_intensity(value, MID_MIN, MID_MAX)
+                mid_data = create_intensity_pattern(intensity)
+                
+            elif msg.topic == TOPIC_T:
+                # Process treble frequency data
+                intensity = map_value_to_intensity(value, TREBLE_MIN, TREBLE_MAX)
+                treble_data = create_intensity_pattern(intensity)
+            
+            new_data_received = True
+            
         except ValueError:
-            print(f"Could not convert value '{value_str}' to float, using zeros")
-            pattern = np.zeros(NUM_LEDS_PER_GROUP)
-        
-        # Update the appropriate frequency band data
-        if msg.topic == TOPIC_B:
-            # Process bass frequency data
-            bass_data = pattern * 0xFFF  # Scale to 12-bit PWM range
-        elif msg.topic == TOPIC_M:
-            # Process mid frequency data
-            mid_data = pattern * 0xFFF
-        elif msg.topic == TOPIC_T:
-            # Process treble frequency data
-            treble_data = pattern * 0xFFF
-        
-        new_data_received = True
-        
+            print(f"Could not convert value '{value_str}' to float")
+            
     except Exception as e:
         print(f"Error processing message: {e}")
+
+def map_value_to_intensity(value, min_threshold, max_threshold):
+    """
+    Maps the dB value to an intensity between 0 and 1
+    - Values below min_threshold are considered silence (0)
+    - Values above max_threshold are considered maximum intensity (1)
+    - Values in between are mapped linearly
+    """
+    # Handle values outside the valid range
+    if value <= min_threshold:
+        return 0.0
+    if value >= max_threshold:
+        return 1.0
+    
+    # Linear mapping from min_threshold to max_threshold -> 0 to 1
+    normalized = (value - min_threshold) / (max_threshold - min_threshold)
+    
+    # Apply exponential curve for more dramatic effect (sound levels are logarithmic)
+    intensity = normalized ** 1.5  # Adjust exponent to tune response
+    
+    return intensity
+
+def create_intensity_pattern(intensity):
+    """
+    Creates an array of intensity values for the LEDs based on overall intensity
+    Using a pattern that increases intensity from edges to center
+    """
+    pattern = np.zeros(NUM_LEDS_PER_GROUP)
+    
+    # Calculate center position
+    mid_point = (NUM_LEDS_PER_GROUP - 1) / 2
+    
+    # Create intensity pattern - stronger in middle, weaker at edges
+    for i in range(NUM_LEDS_PER_GROUP):
+        # Calculate distance from center position (0 to 1 scale)
+        distance = abs(i - mid_point) / mid_point
+        
+        # Create bell curve effect - higher in middle
+        weight = 1.0 - distance ** 2  # Quadratic falloff for more dramatic effect
+        
+        # Set final intensity for this position
+        pattern[i] = intensity * weight
+    
+    return pattern
 
 # === Main Function ===
 def main():
