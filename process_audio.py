@@ -7,15 +7,38 @@ from pydub.utils import get_array_type
 import paho.mqtt.client as mqtt
 import sys
 
-# ===== CONFIGURATION =====
-MQTT_BROKER = "iot.cs.calvin.edu"
-MQTT_PORT = 8883
-MQTT_USERNAME = "cs326"
-MQTT_PASSWORD = "piot"
+def load_js_config(config_file):
+    """
+    Load configuration from a JavaScript file.
+    This function extracts the JSON object from a JavaScript file.
+    """
+    with open(config_file, 'r') as file:
+        content = file.read()
+        
+        # Extract the JSON object from the JavaScript file
+        # Looking for content between the CONFIG = { ... }; pattern
+        match = re.search(r'const\s+CONFIG\s*=\s*(\{[\s\S]*?\});', content)
+        if match:
+            json_str = match.group(1)
+            # Parse the JSON
+            try:
+                return json.loads(json_str)
+            except json.JSONDecodeError:
+                raise ValueError("Failed to parse JSON from JavaScript file")
+        else:
+            raise ValueError("Could not find CONFIG object in JavaScript file")
 
-BASS_TOPIC = "blh94/bass"
-MID_TOPIC = "blh94/mid"
-TREBLE_TOPIC = "blh94/treble"
+config = load_js_config('config.js')
+    
+# Access configuration values
+MQTT_BROKER = config['mqtt']['broker']
+MQTT_PORT = config['mqtt']['port']
+MQTT_USERNAME = config['mqtt']['username']
+MQTT_PASSWORD = config['mqtt']['password']
+    
+BASS_TOPIC = config['topics']['bass']
+MID_TOPIC = config['topics']['mid']
+TREBLE_TOPIC = config['topics']['treble']
 
 FFT_SIZE = 2048
 SAMPLE_RATE = 44100
