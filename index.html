@@ -91,7 +91,7 @@
   <div id="current-time">00:00</div>
   </div>
   </div>
-  
+  <script src="config.js"></script>
   <script>
   const fileInput = document.getElementById('file-upload');
   const playPauseBtn = document.getElementById('playPauseBtn');
@@ -191,8 +191,8 @@
   }
   
   const mqttClient = mqtt.connect("wss://iot.cs.calvin.edu:8083", {
-  username: "cs326",
-  password: "piot",
+    username: CONFIG.mqtt.username,
+    password: CONFIG.mqtt.password
   });
   
   mqttClient.on("connect", () => {
