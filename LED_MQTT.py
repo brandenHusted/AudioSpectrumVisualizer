@@ -94,38 +94,45 @@ def on_message(client, userdata, msg):
         value_str = msg.payload.decode('utf-8')
         
         try:
-            # Convert string to float
+            # Try to convert the string to a float
             value = float(value_str)
+            
+            # Adjust for negative dB values from getFloatFrequencyData
+            # Convert from typical range (-100 to 0 dB) to (0 to 1) for LED intensity
+            # Normalize approximately -80dB (very quiet) to -30dB (loud)
+            if value < -80:
+                value = 0  # Below threshold, treat as silence
+            elif value > -30:
+                value = 1  # Very loud, max brightness
+            else:
+                # Linear mapping from -80dB to -30dB -> 0 to 1
+                value = (value + 80) / 50
+            
+            # Create an array with the value distributed as a pattern
+            # Create a bell curve or gradient pattern for visualization
+            pattern = np.zeros(NUM_LEDS_PER_GROUP)
+            
+            # Center-weighted pattern (stronger in middle, weaker at edges)
+            mid_point = (NUM_LEDS_PER_GROUP - 1) / 2
+            for i in range(NUM_LEDS_PER_GROUP):
+                distance = abs(i - mid_point)
+                weight = 1.0 - (distance / mid_point) * 0.5  # Gentle slope
+                pattern[i] = value * weight
+                
         except ValueError:
-            print(f"Could not convert value '{value_str}' to float, using 0.0 instead")
-            value = 0.0
-        
-        # Create an array with the value distributed across LEDs
-        # Adjust the scaling as needed to make the visualization more dramatic
-        value_scaled = max(0, min(value, 0))  # Ensure value is not too extreme
-        
-        # Create gradient pattern - brightest in middle, dimmer on ends
-        gradient = np.ones(NUM_LEDS_PER_GROUP)
-        for i in range(NUM_LEDS_PER_GROUP):
-            pos = abs((i - (NUM_LEDS_PER_GROUP-1)/2) / ((NUM_LEDS_PER_GROUP-1)/2))
-            gradient[i] = 1 - 0.5 * pos  # Less extreme gradient
-        
-        # Apply value to gradient pattern
-        value_array = gradient * value_scaled
+            print(f"Could not convert value '{value_str}' to float, using zeros")
+            pattern = np.zeros(NUM_LEDS_PER_GROUP)
         
         # Update the appropriate frequency band data
         if msg.topic == TOPIC_B:
             # Process bass frequency data
-            bass_data = value_array
-            bass_data = normalize(bass_data)
+            bass_data = pattern * 0xFFF  # Scale to 12-bit PWM range
         elif msg.topic == TOPIC_M:
             # Process mid frequency data
-            mid_data = value_array
-            mid_data = normalize(mid_data)
+            mid_data = pattern * 0xFFF
         elif msg.topic == TOPIC_T:
             # Process treble frequency data
-            treble_data = value_array
-            treble_data = normalize(treble_data)
+            treble_data = pattern * 0xFFF
         
         new_data_received = True
         
