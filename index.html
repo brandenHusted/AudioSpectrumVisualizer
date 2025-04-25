@@ -80,11 +80,11 @@ border-radius: 12px;
 <div class="container">
 <h1>Welcome to Branden and Caden's Final Project for CS326-A!</h1>
 <h2>Audio Player</h2>
-<form>
-<label for="file-upload">Upload MP3:</label>
-<input type="file" id="file-upload" name="file-upload" title="Select an MP3 file">
-</form>
-
+<form id="upload-form" enctype="multipart/form-data">
+    <label for="file-upload">Upload MP3/WAV:</label>
+    <input type="file" id="file-upload" name="file" accept="audio/*">
+    <button type="submit" class="upload-btn">Upload and Play</button>
+  </form>
 <div id="audio-controls" style="display: none;">
 <button id="playPauseBtn" class="upload-btn">Play</button>
 <div class="progress-container" id="progress-container">
@@ -243,6 +243,28 @@ mqttClient.publish("blh94/treble", trebleVal.toString());
 
 requestAnimationFrame(processAudio);
 }
+
+document.getElementById("upload-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const file = document.getElementById("file-upload").files[0];
+  if (!file) return alert("Please select a file.");
+
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch("/upload", {
+    method: "POST",
+    body: formData
+  });
+
+  if (response.ok) {
+    alert("File uploaded successfully! Audio analysis has started.");
+  } else {
+    alert("Failed to upload file.");
+  }
+});
+
+
 </script>
 </body>
 </html>
