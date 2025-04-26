@@ -98,6 +98,17 @@
   const currentTimeElem = document.getElementById('current-time');
   const progressBar = document.getElementById('progress-bar');
   const progressContainer = document.getElementById('progress-container');
+  // alert the user about the risks of using pirated music
+  alert(
+  "⚠️ Important Notice ⚠️\n\n" +
+  "Using pirated music is illegal and can expose you and your Raspberry Pi project to serious risks:\n\n" +
+  "• Legal consequences, including fines or lawsuits.\n" +
+  "• Malware hidden in pirated files that can compromise your system.\n" +
+  "• Ethical concerns — support the artists who create the music you love!\n\n" +
+  "Always use properly licensed or royalty-free music to keep your project safe, legal, and respectful.\n\n" +
+  "If you have any questions feel free to contact Branden or Caden about if your music safe to use.\n\n" +
+  "If you agree to these terms, please click 'OK' to continue.\n\n"
+);
   let audio = new Audio();
   let isPlaying = false;
   
@@ -107,7 +118,7 @@
   handleFile(file);
   }
   });
-  
+  // Handle file upload
   function handleFile(file) {
  
   const reader = new FileReader();
@@ -121,7 +132,7 @@
   };
   reader.readAsDataURL(file);
   }
-  
+  // show the play/pause button
   playPauseBtn.addEventListener('click', function () {
   if (typeof audioContext === 'undefined') {
   setupAudioProcessing(); // Init audio graph
@@ -135,7 +146,7 @@
   }
   isPlaying = !isPlaying;
   });
-  
+  // Update current time and progress bar when file is playing
   function updateTimeAndProgress() {
   setInterval(() => {
   const currentTime = audio.currentTime;
@@ -149,7 +160,7 @@
   progressBar.style.width = `${progressPercent}%`;
   }, 200);
   }
-  
+  // let progress bar be draggable
   let isDragging = false;
   
   progressContainer.addEventListener('mousedown', (e) => {
@@ -177,7 +188,7 @@
   seekAudio(e);
   }
   });
-  
+  // jump to the clicked position in the audio
   function seekAudio(e) {
   const rect = progressContainer.getBoundingClientRect();
   const offsetX = e.clientX - rect.left;
@@ -189,7 +200,7 @@
   const progressPercent = (newTime / duration) * 100;
   progressBar.style.width = `${progressPercent}%`;
   }
-  
+  // MQTT setup
   const mqttClient = mqtt.connect("wss://iot.cs.calvin.edu:8083", {
     username: CONFIG.mqtt.username,
     password: CONFIG.mqtt.password
@@ -198,9 +209,9 @@
   mqttClient.on("connect", () => {
   console.log("Connected to MQTT broker");
   });
-  
+
   let audioContext, sourceNode, analyser, dataArray;
-  
+  // Setup audio processing for FTT
   function setupAudioProcessing() {
   audioContext = new (window.AudioContext || window.webkitAudioContext)();
   sourceNode = audioContext.createMediaElementSource(audio);
@@ -214,7 +225,7 @@
   
   requestAnimationFrame(processAudio);
   }
-  
+  // Process audio data and send to MQTT as bass, mid, treble and avg the values
   function processAudio() {
   analyser.getByteFrequencyData(dataArray);
   
