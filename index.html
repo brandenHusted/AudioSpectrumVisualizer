@@ -235,7 +235,7 @@
   const bass = dataArray.slice(0, 30);
   const mid = dataArray.slice(31, 180);
   const treble = dataArray.slice(181);
-  
+  // How to use reduce method can be found here: https://stackoverflow.com/questions/33392307/what-does-the-array-method-reduce-do
   const avg = arr => arr.reduce((sum, v) => sum + v, 0) / arr.length;
   
   const bassVal = Math.floor(avg(bass));
