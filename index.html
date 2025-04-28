@@ -100,7 +100,7 @@
   const currentTimeElem = document.getElementById('current-time');
   const progressBar = document.getElementById('progress-bar');
   const progressContainer = document.getElementById('progress-container');
-  // alert the user about the risks of using pirated music
+  // alert the user about the risks of using pirated music. ChatGPT alert message.
   alert(
   "⚠️ Important Notice ⚠️\n\n" +
   "Using pirated music is illegal and can expose you and your Raspberry Pi project to serious risks:\n\n" +
@@ -148,7 +148,7 @@
   }
   isPlaying = !isPlaying;
   });
-  // Update current time and progress bar when file is playing
+  // Update current time and progress bar when file is playing. ChatGTP helped with helping me figure out how to do the progress bar on the website.
   function updateTimeAndProgress() {
   setInterval(() => {
   const currentTime = audio.currentTime;
@@ -196,6 +196,7 @@
   const offsetX = e.clientX - rect.left;
   const width = rect.width;
   const duration = audio.duration;
+   // If statement from ChatGTP
   if (offsetX < 0 || offsetX > rect.width) return;
   const newTime = (offsetX / width) * duration;
   audio.currentTime = newTime;
